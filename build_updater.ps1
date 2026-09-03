@@ -19,7 +19,7 @@ try {
         throw "PyInstaller failed."
     }
 
-    $outputDirectory = Join-Path $workspace "dist\thaTEC-Updater"
+    $outputDirectory = Join-Path $workspace "dist\thaTEC-Updater\_internal"
     Copy-Item -LiteralPath $archive -Destination (Join-Path $outputDirectory "thaTEC-core.zip") -Force
 
     Write-Host ""
