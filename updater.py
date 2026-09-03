@@ -115,10 +115,12 @@ def run_update(module_argument: str | None) -> None:
     if not executable.is_file():
         raise FileNotFoundError(f"Updated executable was not found: {executable}")
     print(f"Installed update in {module_dir / 'thaTEC-Core'}")
-    input("The updater will now attempt to start thaTEC-Core as administrator. In case of an error, simply start it yourself.")
+    input("The updater will now attempt to start thaTEC-Core as administrator. In case of an error, simply start it yourself." \
+	"\nPress Return to continue...")
     launch_as_administrator(executable)
     print('Success.')
-    input("Complete the thaTEC-Core setup and restart if requested, then press Enter to restore the database... ")
+    input("Complete the thaTEC-Core setup and restart if requested." \
+	"\nAfter that, press Enter to restore the database... ")
     restore_database(backup_path, module_dir)
     print(f"Restored database from {backup_path}")
 
