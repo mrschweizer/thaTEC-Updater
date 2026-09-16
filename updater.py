@@ -12,6 +12,7 @@ import sys
 import tempfile
 from datetime import datetime
 from zipfile import ZIP_DEFLATED, ZipFile
+import sqlite3
 
 
 ARCHIVE_NAME = "thaTEC-core.zip"
@@ -137,12 +138,12 @@ def run_update(module_argument: str | None) -> None:
     if not executable.is_file():
         raise FileNotFoundError(f"Updated executable was not found: {executable}")
     print(f"Installed update in {module_dir / 'thaTEC-Core'}")
-    input("The updater will now attempt to start thaTEC-Core as administrator. In case of an error, simply start it yourself." \
-	"\nPress Enter to continue...")
+    wait_enter_print("The updater will now attempt to start thaTEC-Core as administrator. In case of an error, simply start it yourself." \
+	"\nPress Enter to continue...", 'Continuing')
     launch_as_administrator(executable)
     print('Success.')
-    input("Complete the thaTEC-Core setup and restart if requested." \
-	"\nAfter that, press Enter to restore the database... ")
+    wait_enter_print("Complete the thaTEC-Core setup and restart if requested." \
+	"\nAfter that, press Enter to restore the database... ", 'Continuing')
     restore_database(backup_path, module_dir)
     print(f"Restored database from {backup_path}")
 
@@ -153,6 +154,11 @@ def run_restore(module_argument: str | None, backup_argument: str | None) -> Non
     restored_from = restore_database(backup_path, module_dir)
     print(f"Restored database from {restored_from}")
 
+def wait_enter_print(before, after):
+    input(before)
+    print(after)
+    
+    
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -168,6 +174,7 @@ def main() -> int:
     except (FileNotFoundError, OSError, PermissionError, RuntimeError) as error:
         print(f"Update failed: {error}", file=sys.stderr)
         return 1
+    input('Press Enter to close the program...')
     return 0
 
 
