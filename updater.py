@@ -79,6 +79,9 @@ def extract_update(archive_path: Path, target: Path) -> None:
 def restore_database(backup_path: Path | None, module_dir: Path) -> Path:
     if backup_path is None:
         backup_path = select_backup(Path(__file__).resolve().parent)
+    if backup_path is None:
+        print('No backup was selected.')
+        return
     database_target = module_dir / "thaTEC-Core" / "thaTEC-Core.db"
     with ZipFile(backup_path) as archive:
         database_name = next(
@@ -111,6 +114,7 @@ def select_backup(workspace: Path) -> Path:
         raise FileNotFoundError(f"No {BACKUP_PREFIX}*.zip backup found in {workspace}")
 
     print("Available backups:")
+    print("0. None")
     for number, backup in enumerate(backups, start=1):
         print(f"{number}. {backup.name}")
 
@@ -123,6 +127,8 @@ def select_backup(workspace: Path) -> Path:
             continue
         if 1 <= selection <= len(backups):
             return backups[selection - 1]
+        elif selection == 0:
+           return None 
         print(f"Please enter a number between 1 and {len(backups)}.")
 
 
