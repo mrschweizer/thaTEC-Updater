@@ -128,6 +128,7 @@ def select_backup(workspace: Path) -> Path:
 def run_update(module_argument: str | None) -> None:
     workspace = Path(__file__).resolve().parent
     module_dir = get_module_dir(module_argument)
+    backup_path = create_backup(module_dir, workspace)
     backup_path = None
     print(f"Created backup: {backup_path}")
 
