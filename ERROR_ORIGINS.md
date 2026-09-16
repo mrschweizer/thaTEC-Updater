@@ -113,13 +113,13 @@ The database is copied with `shutil.copyfileobj()`, which streams the data from 
 
 With `--restore`, the updater skips the installation process and restores the database from an existing backup.
 
-If `--backup` is omitted, `newest_backup()` searches next to `updater.py` for files matching:
+If `--backup` is omitted, the updater searches next to `updater.py` for files matching:
 
 ```text
 Backup-*.zip
 ```
 
-It chooses the file with the newest modification time. If no matching file exists, it raises `FileNotFoundError`. The newest file is not necessarily the correct backup, so `--backup` should be used when several backups are present or when the required backup is stored elsewhere.
+It lists the matching files from newest to oldest and prompts for the number of the backup to restore. If no matching file exists, it raises `FileNotFoundError`. Use `--backup` to select a backup by path instead, including one stored elsewhere.
 
 ## Command-line errors
 

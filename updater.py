@@ -75,7 +75,9 @@ def extract_update(archive_path: Path, target: Path) -> None:
             shutil.copytree(item, destination) if item.is_dir() else shutil.copy2(item, destination)
 
 
-def restore_database(backup_path: Path, module_dir: Path) -> None:
+def restore_database(backup_path: Path | None, module_dir: Path) -> Path:
+    if backup_path is None:
+        backup_path = select_backup(Path(__file__).resolve().parent)
     database_target = module_dir / "thaTEC-Core" / "thaTEC-Core.db"
     with ZipFile(backup_path) as archive:
         database_name = next(
@@ -86,28 +88,47 @@ def restore_database(backup_path: Path, module_dir: Path) -> None:
             raise FileNotFoundError(f"No thaTEC-Core.db found in {backup_path}")
         with archive.open(database_name) as source, database_target.open("wb") as destination:
             shutil.copyfileobj(source, destination)
+    return backup_path
 
 
 def launch_as_administrator(executable: Path) -> None:
     if os.name != "nt":
         subprocess.Popen([str(executable)], cwd=executable.parent)
         return
-    result = ctypes.windll.shell32.ShellExecuteW(None, "runas", str(executable), None, str(executable.parent), 1)
+    result = ctypes.windll.shell32.ShellExecuteW(None,
+                                                 "runas",
+                                                 str(executable),
+                                                 None, str(executable.parent),
+                                                 1)
     if result <= 32:
         raise OSError(f"Could not start {executable} with administrator rights (error {result}).")
 
 
-def newest_backup(workspace: Path) -> Path:
+def select_backup(workspace: Path) -> Path:
     backups = sorted(workspace.glob(f"{BACKUP_PREFIX}*.zip"), key=lambda path: path.stat().st_mtime, reverse=True)
     if not backups:
         raise FileNotFoundError(f"No {BACKUP_PREFIX}*.zip backup found in {workspace}")
-    return backups[0]
+
+    print("Available backups:")
+    for number, backup in enumerate(backups, start=1):
+        print(f"{number}. {backup.name}")
+
+    while True:
+        answer = input("Enter the number of the backup to restore: ").strip()
+        try:
+            selection = int(answer)
+        except ValueError:
+            print("Please enter a valid backup number.")
+            continue
+        if 1 <= selection <= len(backups):
+            return backups[selection - 1]
+        print(f"Please enter a number between 1 and {len(backups)}.")
 
 
 def run_update(module_argument: str | None) -> None:
     workspace = Path(__file__).resolve().parent
     module_dir = get_module_dir(module_argument)
-    backup_path = create_backup(module_dir, workspace)
+    backup_path = None
     print(f"Created backup: {backup_path}")
 
     extract_update(workspace / ARCHIVE_NAME, module_dir / "thaTEC-Core")
@@ -116,7 +137,7 @@ def run_update(module_argument: str | None) -> None:
         raise FileNotFoundError(f"Updated executable was not found: {executable}")
     print(f"Installed update in {module_dir / 'thaTEC-Core'}")
     input("The updater will now attempt to start thaTEC-Core as administrator. In case of an error, simply start it yourself." \
-	"\nPress Return to continue...")
+	"\nPress Enter to continue...")
     launch_as_administrator(executable)
     print('Success.')
     input("Complete the thaTEC-Core setup and restart if requested." \
@@ -126,11 +147,10 @@ def run_update(module_argument: str | None) -> None:
 
 
 def run_restore(module_argument: str | None, backup_argument: str | None) -> None:
-    workspace = Path(__file__).resolve().parent
     module_dir = get_module_dir(module_argument)
-    backup_path = Path(backup_argument).expanduser().resolve() if backup_argument else newest_backup(workspace)
-    restore_database(backup_path, module_dir)
-    print(f"Restored database from {backup_path}")
+    backup_path = Path(backup_argument).expanduser().resolve() if backup_argument else None
+    restored_from = restore_database(backup_path, module_dir)
+    print(f"Restored database from {restored_from}")
 
 
 def main() -> int:
