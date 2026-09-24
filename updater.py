@@ -136,8 +136,8 @@ def run_update(module_argument: str | None) -> None:
     workspace = Path(__file__).resolve().parent
     module_dir = get_module_dir(module_argument)
     backup_path = create_backup(module_dir, workspace)
+    wait_enter_print(f"Created backup: {backup_path}.\nPress Enter to continue...", 'Continuing...')
     backup_path = None
-    print(f"Created backup: {backup_path}")
 
     extract_update(workspace / ARCHIVE_NAME, module_dir / "thaTEC-Core")
     executable = module_dir / "thaTEC-Core" / "thaTEC-core.exe"
@@ -148,10 +148,9 @@ def run_update(module_argument: str | None) -> None:
 	"\nPress Enter to continue...", 'Continuing')
     launch_as_administrator(executable)
     print('Success.')
-    wait_enter_print("Complete the thaTEC-Core setup and restart if requested." \
-	"\nAfter that, press Enter to restore the database... ", 'Continuing')
-    restore_database(backup_path, module_dir)
-    print(f"Restored database from {backup_path}")
+    # wait_enter_print("Complete the thaTEC-Core setup and restart if requested. Press Enter to continue...", 'Continuing')
+    # restore_database(backup_path, module_dir)
+    # print(f"Restored database from {backup_path}")
 
 
 def run_restore(module_argument: str | None, backup_argument: str | None) -> None:
@@ -163,8 +162,7 @@ def run_restore(module_argument: str | None, backup_argument: str | None) -> Non
 def wait_enter_print(before, after):
     input(before)
     print(after)
-    
-    
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)

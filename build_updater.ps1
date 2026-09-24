@@ -20,13 +20,30 @@ try {
     }
 
     $outputDirectory = Join-Path $workspace "dist\thaTEC-Updater\_internal"
-    Copy-Item -LiteralPath $archive -Destination (Join-Path $outputDirectory "thaTEC-core.zip") -Force
+    $bundledArchive = Join-Path $outputDirectory "thaTEC-core.zip"
+    Copy-Item -LiteralPath $archive -Destination $bundledArchive -Force
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::Open($bundledArchive, [System.IO.Compression.ZipArchiveMode]::Update)
+    try {
+        @($zip.Entries | Where-Object { $_.Name -eq "thaTEC-core.db" }) | ForEach-Object { $_.Delete() }
+    }
+    finally {
+        $zip.Dispose()
+    }
+
+    $distDirectory = Join-Path $workspace "dist\thaTEC-Updater"
+    $distArchive = Join-Path $workspace "dist\thaTEC-Updater.zip"
+    Compress-Archive -LiteralPath $distDirectory -DestinationPath $distArchive -Force
 
     Write-Host ""
     Write-Host "Build complete:"
-    Write-Host (Join-Path $outputDirectory "thaTEC-Updater.exe")
+    Write-Host (Join-Path $distDirectory "thaTEC-Updater.exe")
+    Write-Host $distArchive
 }
 catch {
     Write-Error $_.Exception.Message
     exit 1
 }
+
