@@ -79,7 +79,7 @@ def get_module_dir(argument: str | None) -> Path:
 
 def is_process_running(process_name: str) -> bool:
     result = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {process_name}", "/NH", "/FO", "CSV"],
-                            capture_output=True, text=True)
+                            capture_output=True, encoding="oem", errors="replace")
     # tasklist prints a localized info message when nothing matches, so look for the image name itself.
     return f'"{process_name.lower()}"' in result.stdout.lower()
 
@@ -92,7 +92,7 @@ def close_running_instance(process_name: str = PROCESS_NAME, timeout: float = 10
 
     wait_enter_print(f"{process_name} is currently running and will be closed. Unsaved data will be lost."
                      "\nPress Enter to continue...", f"Closing {process_name}...")
-    result = subprocess.run(["taskkill", "/F", "/T", "/IM", process_name], capture_output=True, text=True)
+    result = subprocess.run(["taskkill", "/F", "/T", "/IM", process_name], capture_output=True, encoding="oem", errors="replace")
     logger.debug("taskkill returned %s: %s %s", result.returncode, result.stdout.strip(), result.stderr.strip())
 
     deadline = time.monotonic() + timeout
