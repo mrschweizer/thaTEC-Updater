@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime
 from zipfile import ZIP_DEFLATED, ZipFile
 import sqlite3
@@ -18,6 +19,7 @@ import sqlite3
 
 ARCHIVE_NAME = "thaTEC-core.zip"
 BACKUP_PREFIX = "Backup-"
+PROCESS_NAME = "thaTEC-core.exe"
 
 logger = logging.getLogger("updater")
 
@@ -73,6 +75,32 @@ def get_module_dir(argument: str | None) -> Path:
         if not (module_dir / name).is_dir():
             raise FileNotFoundError(f"Missing required directory: {module_dir / name}")
     return module_dir
+
+
+def is_process_running(process_name: str) -> bool:
+    result = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {process_name}", "/NH", "/FO", "CSV"],
+                            capture_output=True, text=True)
+    # tasklist prints a localized info message when nothing matches, so look for the image name itself.
+    return f'"{process_name.lower()}"' in result.stdout.lower()
+
+
+def close_running_instance(process_name: str = PROCESS_NAME, timeout: float = 10.0) -> None:
+    """Terminate running instances of thaTEC-Core so their files can be backed up and replaced."""
+    if os.name != "nt" or not is_process_running(process_name):
+        logger.debug("%s is not running", process_name)
+        return
+
+    wait_enter_print(f"{process_name} is currently running and will be closed. Unsaved data will be lost."
+                     "\nPress Enter to continue...", f"Closing {process_name}...")
+    result = subprocess.run(["taskkill", "/F", "/T", "/IM", process_name], capture_output=True, text=True)
+    logger.debug("taskkill returned %s: %s %s", result.returncode, result.stdout.strip(), result.stderr.strip())
+
+    deadline = time.monotonic() + timeout
+    while is_process_running(process_name):
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"Could not close {process_name}. Please close it manually and try again.")
+        time.sleep(0.5)
+    logger.info(f"Closed {process_name}")
 
 
 def create_backup(module_dir: Path, workspace: Path) -> Path:
@@ -186,6 +214,7 @@ def select_backup(workspace: Path) -> Path | None:
 def run_update(module_argument: str | None) -> None:
     workspace = Path(__file__).resolve().parent
     module_dir = get_module_dir(module_argument)
+    close_running_instance()
     backup_path = create_backup(module_dir, workspace)
     wait_enter_print(f"Created backup: {backup_path}.\nPress Enter to continue...", 'Continuing...')
     backup_path = None
@@ -207,6 +236,7 @@ def run_update(module_argument: str | None) -> None:
 def run_restore(module_argument: str | None, backup_argument: str | None) -> None:
     module_dir = get_module_dir(module_argument)
     backup_path = Path(backup_argument).expanduser().resolve() if backup_argument else None
+    close_running_instance()
     restored_from = restore_database(backup_path, module_dir)
     logger.info(f"Restored database from {restored_from}")
 
@@ -227,7 +257,7 @@ def main() -> int:
     if relaunch_as_administrator():
         logger.debug("Restarted with administrator rights, exiting this instance.")
         return 0
-
+	
     try:
         if arguments.restore:
             run_restore(arguments.module_dir, arguments.backup)
