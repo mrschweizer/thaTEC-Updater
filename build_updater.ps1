@@ -1,4 +1,5 @@
 ﻿$ErrorActionPreference = "Stop"
+$appName = "labMule-Updater"
 $workspace = $PSScriptRoot
 
 try {
@@ -14,12 +15,12 @@ try {
         throw "Missing thaTEC-core.zip next to this script."
     }
 
-    python -m PyInstaller --noconfirm --clean --onedir --name labMule-Updater updater.py
+    python -m PyInstaller --noconfirm --clean --onedir --name $appName updater.py
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller failed."
     }
 
-    $outputDirectory = Join-Path $workspace "dist\thaTEC-Updater\_internal"
+    $outputDirectory = Join-Path $workspace "dist\$appName\_internal"
     $bundledArchive = Join-Path $outputDirectory "thaTEC-core.zip"
     # Write the filtered archive in a single pass instead of copying and reopening it:
     # a freshly copied file is often briefly locked by antivirus/indexer scans.
@@ -60,13 +61,13 @@ try {
         $sourceZip.Dispose()
     }
 
-    $distDirectory = Join-Path $workspace "dist\thaTEC-Updater"
-    $distArchive = Join-Path $workspace "dist\thaTEC-Updater.zip"
+    $distDirectory = Join-Path $workspace "dist\$appName"
+    $distArchive = Join-Path $workspace "dist\$appName.zip"
     Compress-Archive -LiteralPath $distDirectory -DestinationPath $distArchive -Force
 
     Write-Host ""
     Write-Host "Build complete:"
-    Write-Host (Join-Path $distDirectory "thaTEC-Updater.exe")
+    Write-Host (Join-Path $distDirectory "$appName.exe")
     Write-Host $distArchive
 }
 catch {
