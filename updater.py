@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import logging
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime
 from zipfile import ZIP_DEFLATED, ZipFile
 import sqlite3
@@ -17,11 +19,47 @@ import sqlite3
 
 ARCHIVE_NAME = "thaTEC-core.zip"
 BACKUP_PREFIX = "Backup-"
+PROCESS_NAME = "thaTEC-core.exe"
+
+logger = logging.getLogger("updater")
+
+
+def setup_logging() -> Path:
+    """Log to the console and to a log file next to the script or the built executable."""
+    if getattr(sys, "frozen", False):
+        log_path = Path(sys.executable).resolve().with_suffix(".log")
+    else:
+        log_path = Path(__file__).resolve().with_suffix(".log")
+
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(logging.Formatter("%(message)s"))
+
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter("%(asctime)s [%(process)d] %(levelname)s %(message)s"))
+
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+    sys.excepthook = log_uncaught_exception
+    return log_path
+
+
+def log_uncaught_exception(exc_type, exc_value, exc_traceback) -> None:
+    logger.critical("Unhandled error", exc_info=(exc_type, exc_value, exc_traceback))
+
+
+def ask(prompt: str) -> str:
+    """input() that also records the prompt and the answer in the log file."""
+    answer = input(prompt)
+    logger.debug("Prompt %r answered with %r", prompt, answer)
+    return answer
 
 
 def prompt_for_module_dir() -> Path:
     default = Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / "THATec" / "Modules"
-    answer = input(f"Module directory (default: {default}): ").strip().strip('"')
+    answer = ask(f"Module directory (default: {default}): ").strip().strip('"')
     return Path(answer) if answer else default
 
 
@@ -37,6 +75,32 @@ def get_module_dir(argument: str | None) -> Path:
         if not (module_dir / name).is_dir():
             raise FileNotFoundError(f"Missing required directory: {module_dir / name}")
     return module_dir
+
+
+def is_process_running(process_name: str) -> bool:
+    result = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {process_name}", "/NH", "/FO", "CSV"],
+                            capture_output=True, encoding="oem", errors="replace")
+    # tasklist prints a localized info message when nothing matches, so look for the image name itself.
+    return f'"{process_name.lower()}"' in result.stdout.lower()
+
+
+def close_running_instance(process_name: str = PROCESS_NAME, timeout: float = 10.0) -> None:
+    """Terminate running instances of thaTEC-Core so their files can be backed up and replaced."""
+    if os.name != "nt" or not is_process_running(process_name):
+        logger.debug("%s is not running", process_name)
+        return
+
+    wait_enter_print(f"{process_name} is currently running and will be closed. Unsaved data will be lost."
+                     "\nPress Enter to continue...", f"Closing {process_name}...")
+    result = subprocess.run(["taskkill", "/F", "/T", "/IM", process_name], capture_output=True, encoding="oem", errors="replace")
+    logger.debug("taskkill returned %s: %s %s", result.returncode, result.stdout.strip(), result.stderr.strip())
+
+    deadline = time.monotonic() + timeout
+    while is_process_running(process_name):
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"Could not close {process_name}. Please close it manually and try again.")
+        time.sleep(0.5)
+    logger.info(f"Closed {process_name}")
 
 
 def create_backup(module_dir: Path, workspace: Path) -> Path:
@@ -80,7 +144,7 @@ def restore_database(backup_path: Path | None, module_dir: Path) -> Path:
     if backup_path is None:
         backup_path = select_backup(Path(__file__).resolve().parent)
     if backup_path is None:
-        print('No backup was selected.')
+        logger.info('No backup was selected.')
         return
     database_target = module_dir / "thaTEC-Core" / "thaTEC-Core.db"
     with ZipFile(backup_path) as archive:
@@ -108,79 +172,102 @@ def launch_as_administrator(executable: Path) -> None:
         raise OSError(f"Could not start {executable} with administrator rights (error {result}).")
 
 
-def select_backup(workspace: Path) -> Path:
+def relaunch_as_administrator() -> bool:
+    """Restart this program elevated. Returns True if an elevated instance was started."""
+    if os.name != "nt" or ctypes.windll.shell32.IsUserAnAdmin():
+        return False
+    if getattr(sys, "frozen", False):
+        parameters = subprocess.list2cmdline(sys.argv[1:])
+    else:
+        parameters = subprocess.list2cmdline([str(Path(__file__).resolve()), *sys.argv[1:]])
+    # ShellExecuteW blocks until the user has answered the UAC prompt.
+    result = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, parameters, os.getcwd(), 1)
+    if result <= 32:
+        raise PermissionError(f"Could not obtain administrator rights (error {result}).")
+    return True
+
+
+def select_backup(workspace: Path) -> Path | None:
     backups = sorted(workspace.glob(f"{BACKUP_PREFIX}*.zip"), key=lambda path: path.stat().st_mtime, reverse=True)
     if not backups:
         raise FileNotFoundError(f"No {BACKUP_PREFIX}*.zip backup found in {workspace}")
 
-    print("Available backups:")
-    print("0. None")
+    logger.info("Available backups:")
+    logger.info("0. None")
     for number, backup in enumerate(backups, start=1):
-        print(f"{number}. {backup.name}")
+        logger.info(f"{number}. {backup.name}")
 
     while True:
-        answer = input("Enter the number of the backup to restore: ").strip()
+        answer = ask("Enter the number of the backup to restore: ").strip()
         try:
             selection = int(answer)
         except ValueError:
-            print("Please enter a valid backup number.")
+            logger.info("Please enter a valid backup number.")
             continue
         if 1 <= selection <= len(backups):
             return backups[selection - 1]
         elif selection == 0:
            return None 
-        print(f"Please enter a number between 1 and {len(backups)}.")
+        logger.info(f"Please enter a number between 1 and {len(backups)}.")
 
 
 def run_update(module_argument: str | None) -> None:
     workspace = Path(__file__).resolve().parent
     module_dir = get_module_dir(module_argument)
+    close_running_instance()
     backup_path = create_backup(module_dir, workspace)
+    wait_enter_print(f"Created backup: {backup_path}.\nPress Enter to continue...", 'Continuing...')
     backup_path = None
-    print(f"Created backup: {backup_path}")
 
     extract_update(workspace / ARCHIVE_NAME, module_dir / "thaTEC-Core")
     executable = module_dir / "thaTEC-Core" / "thaTEC-core.exe"
     if not executable.is_file():
         raise FileNotFoundError(f"Updated executable was not found: {executable}")
-    print(f"Installed update in {module_dir / 'thaTEC-Core'}")
+    logger.info(f"Installed update in {module_dir / 'thaTEC-Core'}")
     wait_enter_print("The updater will now attempt to start thaTEC-Core as administrator. In case of an error, simply start it yourself." \
 	"\nPress Enter to continue...", 'Continuing')
     launch_as_administrator(executable)
-    print('Success.')
-    wait_enter_print("Complete the thaTEC-Core setup and restart if requested." \
-	"\nAfter that, press Enter to restore the database... ", 'Continuing')
-    restore_database(backup_path, module_dir)
-    print(f"Restored database from {backup_path}")
+    logger.info('Success.')
+    # wait_enter_print("Complete the thaTEC-Core setup and restart if requested. Press Enter to continue...", 'Continuing')
+    # restore_database(backup_path, module_dir)
+    # print(f"Restored database from {backup_path}")
 
 
 def run_restore(module_argument: str | None, backup_argument: str | None) -> None:
     module_dir = get_module_dir(module_argument)
     backup_path = Path(backup_argument).expanduser().resolve() if backup_argument else None
+    close_running_instance()
     restored_from = restore_database(backup_path, module_dir)
-    print(f"Restored database from {restored_from}")
+    logger.info(f"Restored database from {restored_from}")
 
 def wait_enter_print(before, after):
-    input(before)
-    print(after)
-    
-    
+    ask(before)
+    logger.info(after)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--module-dir", help="Path to THATec\\Modules")
     parser.add_argument("--restore", action="store_true", help="Only restore the database from an existing backup")
     parser.add_argument("--backup", help="Backup zip to use with --restore")
+    log_path = setup_logging()
     arguments = parser.parse_args()
+    logger.debug("Started with arguments %r, logging to %s", sys.argv, log_path)
+
+    if relaunch_as_administrator():
+        logger.debug("Restarted with administrator rights, exiting this instance.")
+        return 0
+	
     try:
         if arguments.restore:
             run_restore(arguments.module_dir, arguments.backup)
         else:
             run_update(arguments.module_dir)
     except (FileNotFoundError, OSError, PermissionError, RuntimeError) as error:
-        print(f"Update failed: {error}", file=sys.stderr)
+        logger.error(f"Update failed: {error}")
+        logger.debug("Traceback:", exc_info=True)
         return 1
-    input('Press Enter to close the program...')
+    ask('Press Enter to close the program...')
     return 0
 
 
