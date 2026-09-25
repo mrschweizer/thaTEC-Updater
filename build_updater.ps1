@@ -14,7 +14,7 @@ try {
         throw "Missing thaTEC-core.zip next to this script."
     }
 
-    python -m PyInstaller --noconfirm --clean --onedir --name thaTEC-Updater updater.py
+    python -m PyInstaller --noconfirm --clean --onedir --name labMule-Updater updater.py
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller failed."
     }
