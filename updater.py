@@ -108,6 +108,21 @@ def launch_as_administrator(executable: Path) -> None:
         raise OSError(f"Could not start {executable} with administrator rights (error {result}).")
 
 
+def relaunch_as_administrator() -> bool:
+    """Restart this program elevated. Returns True if an elevated instance was started."""
+    if os.name != "nt" or ctypes.windll.shell32.IsUserAnAdmin():
+        return False
+    if getattr(sys, "frozen", False):
+        parameters = subprocess.list2cmdline(sys.argv[1:])
+    else:
+        parameters = subprocess.list2cmdline([str(Path(__file__).resolve()), *sys.argv[1:]])
+    # ShellExecuteW blocks until the user has answered the UAC prompt.
+    result = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, parameters, os.getcwd(), 1)
+    if result <= 32:
+        raise PermissionError(f"Could not obtain administrator rights (error {result}).")
+    return True
+
+
 def select_backup(workspace: Path) -> Path:
     backups = sorted(workspace.glob(f"{BACKUP_PREFIX}*.zip"), key=lambda path: path.stat().st_mtime, reverse=True)
     if not backups:
@@ -170,6 +185,10 @@ def main() -> int:
     parser.add_argument("--restore", action="store_true", help="Only restore the database from an existing backup")
     parser.add_argument("--backup", help="Backup zip to use with --restore")
     arguments = parser.parse_args()
+
+    if relaunch_as_administrator():
+        return 0
+
     try:
         if arguments.restore:
             run_restore(arguments.module_dir, arguments.backup)
