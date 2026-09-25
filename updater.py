@@ -123,7 +123,7 @@ def relaunch_as_administrator() -> bool:
     return True
 
 
-def select_backup(workspace: Path) -> Path:
+def select_backup(workspace: Path) -> Path | None:
     backups = sorted(workspace.glob(f"{BACKUP_PREFIX}*.zip"), key=lambda path: path.stat().st_mtime, reverse=True)
     if not backups:
         raise FileNotFoundError(f"No {BACKUP_PREFIX}*.zip backup found in {workspace}")

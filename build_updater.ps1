@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 $workspace = $PSScriptRoot
 
 try {
@@ -21,16 +21,43 @@ try {
 
     $outputDirectory = Join-Path $workspace "dist\thaTEC-Updater\_internal"
     $bundledArchive = Join-Path $outputDirectory "thaTEC-core.zip"
-    Copy-Item -LiteralPath $archive -Destination $bundledArchive -Force
-
+    # Write the filtered archive in a single pass instead of copying and reopening it:
+    # a freshly copied file is often briefly locked by antivirus/indexer scans.
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip = [System.IO.Compression.ZipFile]::Open($bundledArchive, [System.IO.Compression.ZipArchiveMode]::Update)
+    if (Test-Path -LiteralPath $bundledArchive) {
+        Remove-Item -LiteralPath $bundledArchive -Force
+    }
+    $sourceZip = [System.IO.Compression.ZipFile]::OpenRead($archive)
     try {
-        @($zip.Entries | Where-Object { $_.Name -eq "thaTEC-core.db" }) | ForEach-Object { $_.Delete() }
+        $targetZip = [System.IO.Compression.ZipFile]::Open($bundledArchive, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($entry in $sourceZip.Entries) {
+                if ($entry.Name -eq "thaTEC-core.db") {
+                    continue
+                }
+                $newEntry = $targetZip.CreateEntry($entry.FullName, [System.IO.Compression.CompressionLevel]::Optimal)
+                $newEntry.LastWriteTime = $entry.LastWriteTime
+                if ($entry.FullName.EndsWith("/")) {
+                    continue
+                }
+                $sourceStream = $entry.Open()
+                $targetStream = $newEntry.Open()
+                try {
+                    $sourceStream.CopyTo($targetStream)
+                }
+                finally {
+                    $targetStream.Dispose()
+                    $sourceStream.Dispose()
+                }
+            }
+        }
+        finally {
+            $targetZip.Dispose()
+        }
     }
     finally {
-        $zip.Dispose()
+        $sourceZip.Dispose()
     }
 
     $distDirectory = Join-Path $workspace "dist\thaTEC-Updater"
